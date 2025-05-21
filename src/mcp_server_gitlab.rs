@@ -66,11 +66,38 @@ impl zed::Extension for GitlabModelContextExtension {
     fn context_server_configuration(
         &mut self,
         _context_server_id: &ContextServerId,
-        _project: &Project,
+        project: &Project,
     ) -> Result<Option<ContextServerConfiguration>> {
         let installation_instructions =
             include_str!("../configuration/installation_instructions.md").to_string();
-        let default_settings = include_str!("../configuration/default_settings.jsonc").to_string();
+
+        let settings = ContextServerSettings::for_project("mcp-server-gitlab", project);
+
+        let mut default_settings =
+            include_str!("../configuration/default_settings.jsonc").to_string();
+
+        if let Ok(user_settings) = settings {
+            if let Some(settings_value) = user_settings.settings {
+                if let Ok(gitlab_settings) =
+                    serde_json::from_value::<GitlabContextServerSettings>(settings_value)
+                {
+                    default_settings = default_settings.replace(
+                        "\"YOUR_GITLAB_TOKEN\"",
+                        &format!("\"{}\"", gitlab_settings.gitlab_personal_access_token),
+                    );
+
+                    if let Some(api_url) = gitlab_settings.gitlab_api_url {
+                        default_settings = default_settings
+                            .replace("// \"gitlab_api_url\"", "\"gitlab_api_url\"")
+                            .replace(
+                                "\"https://your-gitlab-instance.com/api/v4\"",
+                                &format!("\"{}\"", api_url),
+                            );
+                    }
+                }
+            }
+        }
+
         let settings_schema =
             serde_json::to_string(&schemars::schema_for!(GitlabContextServerSettings))
                 .map_err(|e| e.to_string())?;
